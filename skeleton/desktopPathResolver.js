@@ -2,7 +2,6 @@ import path, { join } from 'path';
 import fs from 'fs';
 
 export default class DesktopPathResolver {
-
     /**
      * Reads a json file.
      * @returns {Object}
@@ -42,7 +41,7 @@ export default class DesktopPathResolver {
 
     /**
      * Decides where the current desktop.asar lies. Takes into account desktopHCP.
-     * Also supports falling back to last known good version Meteor mechanism.
+     * Also supports falling back to last known good version from Meteor mechanism.
      *
      * @param {string} userDataDir - user data path
      * @param {Log}    log         - App's logger instance
@@ -73,7 +72,8 @@ export default class DesktopPathResolver {
         if (autoupdateConfig.lastDownloadedVersion) {
             // We have a last downloaded version.
             if (~autoupdateConfig.blacklistedVersions.indexOf(
-                autoupdateConfig.lastDownloadedVersion)
+                autoupdateConfig.lastDownloadedVersion
+            )
             ) {
                 // If it is blacklisted lets check if we have last known good version.
                 if (autoupdateConfig.lastKnownGoodVersion) {
@@ -127,7 +127,8 @@ export default class DesktopPathResolver {
                     if (desktopVersion.version !== initialDesktopVersion) {
                         desktopPath = path.resolve(join(
                             userDataDir,
-                            `${desktopVersion.version}_desktop.asar`));
+                            `${desktopVersion.version}_desktop.asar`
+                        ));
                         log.info('will use desktop.asar from last downloaded version ' +
                             `at: ${desktopPath}`);
                     } else {
@@ -148,5 +149,4 @@ export default class DesktopPathResolver {
         }
         return desktopPath;
     }
-
 }

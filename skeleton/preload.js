@@ -1,8 +1,9 @@
+/* eslint-disable global-require */
 // This was inspiried by
 // https://github.com/electron-webapps/meteor-electron/blob/master/app/preload.js
-
 const ipc = require('electron').ipcRenderer;
 
+const exposedModules = [];
 /**
  * See https://github.com/atom/electron/issues/1753#issuecomment-104719851.
  */
@@ -21,13 +22,13 @@ const ipc = require('electron').ipcRenderer;
  * @class
  */
 const Desktop = new (class {
-
     constructor() {
         this.onceEventListeners = {};
         this.eventListeners = {};
         this.registeredInIpc = {};
         this.fetchCallCounter = 0;
         this.fetchTimeoutTimers = {};
+        this.fetchTimeout = 2000;
     }
 
     /**
@@ -79,12 +80,27 @@ const Desktop = new (class {
      * @private
      */
     addToListeners(module, event, callback, once, response = false) {
+        const self = this;
+        const eventName = response ? this.getResponseEventName(module, event) :
+            this.getEventName(module, event);
+
+        function handler(...args) {
+            if (eventName in self.eventListeners) {
+                self.eventListeners[eventName].forEach(eventHandler => eventHandler(...args));
+            }
+            if (eventName in self.onceEventListeners) {
+                self.onceEventListeners[eventName].forEach((eventHandler) => {
+                    eventHandler(...args);
+                    ipc.removeListener(eventHandler, handler);
+                    self.onceEventListeners[eventName].delete(eventHandler);
+                });
+            }
+        }
+
         let listeners = 'eventListeners';
         if (once) {
             listeners = 'onceEventListeners';
         }
-        const eventName = response ? this.getResponseEventName(module, event) :
-            this.getEventName(module, event);
         if (eventName in this[listeners]) {
             this[listeners][eventName].add(callback);
         } else {
@@ -92,17 +108,7 @@ const Desktop = new (class {
         }
         if (!(eventName in this.registeredInIpc)) {
             this.registeredInIpc[eventName] = true;
-            ipc.on(eventName, (...args) => {
-                if (eventName in this.eventListeners) {
-                    this.eventListeners[eventName].forEach(eventHandler => eventHandler(...args));
-                }
-                if (eventName in this.onceEventListeners) {
-                    this.onceEventListeners[eventName].forEach((eventHandler) => {
-                        eventHandler(...args);
-                        this.onceEventListeners[eventName].delete(eventHandler);
-                    });
-                }
-            });
+            ipc.on(eventName, handler);
         }
     }
 
@@ -145,7 +151,8 @@ const Desktop = new (class {
             if (eventName in this[listeners]) {
                 if (~this[listeners][eventName].indexOf(callback)) {
                     this[listeners][eventName].splice(
-                        this[listeners][eventName].indexOf(callback), 1);
+                        this[listeners][eventName].indexOf(callback), 1
+                    );
                 }
             }
         });
@@ -178,6 +185,20 @@ const Desktop = new (class {
     }
 
     /**
+     * Sends and IPC event response for a provided fetch id.
+     *
+     * @param {string} module - module name
+     * @param {string} event   - event name
+     * @param {number} fetchId - fetch id that came with then event you are
+     *                           responding to
+     * @param {...*=}  data    - data to send with the event
+     * @public
+     */
+    respond(module, event, fetchId, ...data) {
+        ipc.send(this.getResponseEventName(module, `${event}_${fetchId}`), fetchId, ...data);
+    }
+
+    /**
      * Fetches some data from main process by sending an IPC event and waiting for a response.
      * Returns a promise that resolves when the response is received.
      *
@@ -188,7 +209,7 @@ const Desktop = new (class {
      * @returns {Promise}
      * @public
      */
-    fetch(module, event, timeout = 2000, ...args) {
+    fetch(module, event, timeout = this.fetchTimeout, ...args) {
         const eventName = this.getEventName(module, event);
         if (this.fetchCallCounter === Number.MAX_SAFE_INTEGER) {
             this.fetchCallCounter = 0;
@@ -204,13 +225,36 @@ const Desktop = new (class {
                         delete this.fetchTimeoutTimers[fetchId];
                         resolve(...responseArgs);
                     }
-                }, true
-            );
+                }, true);
             this.fetchTimeoutTimers[fetchId] = setTimeout(() => {
                 reject('timeout');
             }, timeout);
             ipc.send(eventName, fetchId, ...args);
         });
+    }
+
+    /**
+     * Desktop.fetch without the need to provide a timeout value.
+     *
+     * @param {string} module  - module name
+     * @param {string} event   - name of an event
+     * @param {...*} args      - arguments to send with the event
+     * @returns {Promise}
+     * @public
+     */
+    call(module, event, ...args) {
+        return this.fetch(module, event, this.fetchTimeout, ...args);
+    }
+
+    /**
+     * Sets the default fetch timeout.
+     * @param {number} timeout
+     */
+    setDefaultFetchTimeout(timeout = this.fetchTimeout) {
+        if (typeof timeout !== 'number') {
+            throw new Error('timeout must a number');
+        }
+        this.fetchTimeout = timeout;
     }
 
     /**
@@ -246,7 +290,6 @@ const Desktop = new (class {
     getResponseEventName(module, event) {
         return `${this.getEventName(module, event)}___response`;
     }
-
 })();
 
 
@@ -257,7 +300,7 @@ process.once('loaded', () => {
         devtron = require('devtron'); // eslint-disable-line global-require
         global.__devtron = { require, process }; // eslint-disable-line no-underscore-dangle
     } catch (e) {
-        // If that fails, then probably this is production build and devtron is not available.
+        // If that fails, then this is a production build and devtron is not available.
     }
     if (process.env.NODE_ENV === 'test') {
         global.electronRequire = require;
@@ -265,5 +308,11 @@ process.once('loaded', () => {
     }
 
     Desktop.devtron = devtron;
+    Desktop.electron = [];
+
+    exposedModules.forEach((module) => {
+        Desktop.electron[module] = require('electron')[module];
+    });
+
     global.Desktop = Desktop;
 });

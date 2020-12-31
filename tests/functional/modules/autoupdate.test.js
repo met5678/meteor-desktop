@@ -35,6 +35,7 @@ import shell from 'shelljs';
 import fs from 'fs';
 import mockery from 'mockery';
 
+import mockerySettings from '../../helpers/mockerySettings';
 import paths from '../../helpers/paths';
 import { serveVersion } from '../../helpers/autoupdate/meteorServer';
 import {
@@ -48,7 +49,9 @@ let HCPClient;
 
 chai.use(sinonChai);
 chai.use(dirty);
-const { describe, it, before, after } = global;
+const {
+    describe, it, before, after
+} = global;
 const { expect } = chai;
 
 const showLogs = false;
@@ -80,8 +83,8 @@ function exists(checkPath) {
  * @returns {HCPClient}
  */
 async function setUpAutoupdate(printLogs = false, onNewVersionReady, expectedVersion = 'version1',
-                               errorCallback = Function.prototype, printErrorLogs = false,
-                               testMode = true) {
+    errorCallback = Function.prototype, printErrorLogs = false,
+    testMode = true) {
     const autoupdate = new HCPClient({
         log: getFakeLogger(printLogs, printErrorLogs),
         appSettings: {},
@@ -126,7 +129,8 @@ async function setUpAutoupdate(printLogs = false, onNewVersionReady, expectedVer
     };
     try {
         await setUpLocalServer(
-            autoupdate.getDirectory(), autoupdate.getParentDirectory());
+            autoupdate.getDirectory(), autoupdate.getParentDirectory()
+        );
         await expectVersionServedToEqual(expectedVersion);
     } catch (e) {
         throw new Error(e);
@@ -152,8 +156,8 @@ async function setUpAutoupdate(printLogs = false, onNewVersionReady, expectedVer
  *                                   when true, autoupdate does not fire the startup timer.
  */
 async function runAutoUpdateTests(done, testCallback, versionExpectedAfter,
-                                  versionExpectedBefore = 'version1', doNotCallDone = false,
-                                  printErrorLogs = showErrors, testMode = true) {
+    versionExpectedBefore = 'version1', doNotCallDone = false,
+    printErrorLogs = showErrors, testMode = true) {
     let autoupdate;
     try {
         autoupdate = await setUpAutoupdate(showLogs, async () => {
@@ -200,7 +204,7 @@ function cleanup() {
  * @param {boolean} confirmVersion - Whether to fire startupDidComplete.
  */
 async function downloadAndServeVersionLocally(versionToDownload, versionToServeOnMeteorServerAfter,
-                                              done, confirmVersion = true) {
+    done, confirmVersion = true) {
     try {
         meteorServer = await serveVersion(versionToDownload);
         meteorServer.receivedRequests = [];
@@ -248,10 +252,7 @@ describe('autoupdate', () => {
         shell.rm('-rf', paths.autoUpdateVersionsPath);
         shell.mkdir('-p', paths.autoUpdateVersionsPath);
         mockery.registerMock('original-fs', fs);
-        mockery.enable({
-            warnOnReplace: false,
-            warnOnUnregistered: false
-        });
+        mockery.enable(mockerySettings);
         HCPClient = require('../../../skeleton/modules/autoupdate.js').default;
     });
 
@@ -755,13 +756,15 @@ describe('autoupdate', () => {
         beforeEach(async (done) => {
             cleanup();
             const downloadingPath = path.join(
-                paths.autoUpdateVersionsPath, 'Downloading');
+                paths.autoUpdateVersionsPath, 'Downloading'
+            );
             if (exists(downloadingPath)) {
                 shell.rm('-rf', downloadingPath);
             }
             shell.mkdir(downloadingPath);
             shell.cp('-r', path.join(
-                paths.fixtures.partiallyDownloadableVersions, 'version2', '*'), downloadingPath);
+                paths.fixtures.partiallyDownloadableVersions, 'version2', '*'
+            ), downloadingPath);
             meteorServer = await serveVersion('version2');
             meteorServer.receivedRequests = [];
 
@@ -814,13 +817,15 @@ describe('autoupdate', () => {
         beforeEach(async (done) => {
             cleanup();
             const downloadingPath = path.join(
-                paths.autoUpdateVersionsPath, 'Downloading');
+                paths.autoUpdateVersionsPath, 'Downloading'
+            );
             if (exists(downloadingPath)) {
                 shell.rm('-rf', downloadingPath);
             }
             shell.mkdir(downloadingPath);
             shell.cp('-r', path.join(
-                paths.fixtures.partiallyDownloadableVersions, 'version2', '*'), downloadingPath);
+                paths.fixtures.partiallyDownloadableVersions, 'version2', '*'
+            ), downloadingPath);
             meteorServer = await serveVersion('version3');
             meteorServer.receivedRequests = [];
 
@@ -895,8 +900,7 @@ describe('autoupdate', () => {
         it('should fallback to last known good version', async (done) => {
             await (() =>
                 new Promise(resolve =>
-                    downloadAndServeVersionLocally('version2', 'version3', resolve)
-                ))();
+                    downloadAndServeVersionLocally('version2', 'version3', resolve)))();
 
             await runAutoUpdateTests(
                 done,
@@ -906,7 +910,8 @@ describe('autoupdate', () => {
                     expect(autoupdate.config.blacklistedVersions).to.contain('version3');
                     done();
                 },
-                'version3', 'version2', true, undefined, false);
+                'version3', 'version2', true, undefined, false
+            );
         });
 
         it('should fallback to initial asset bundle', async (done) => {
@@ -919,7 +924,8 @@ describe('autoupdate', () => {
                     expect(autoupdate.config.blacklistedVersions).to.contain('version2');
                     done();
                 },
-                'version2', 'version1', true, undefined, false);
+                'version2', 'version1', true, undefined, false
+            );
         });
     });
 

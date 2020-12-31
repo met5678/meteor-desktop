@@ -8,6 +8,7 @@ import shell from 'shelljs';
 import mockery from 'mockery';
 
 import paths from '../helpers/paths';
+import mockerySettings from '../helpers/mockerySettings';
 
 chai.use(sinonChai);
 chai.use(dirty);
@@ -27,10 +28,7 @@ describe('desktop', () => {
 
     before(() => {
         mockery.registerMock('electron', Electron);
-        mockery.enable({
-            warnOnReplace: false,
-            warnOnUnregistered: false
-        });
+        mockery.enable(mockerySettings);
     });
 
     after(() => {
@@ -61,10 +59,11 @@ describe('desktop', () => {
     });
 
     describe('#getHashSettings', () => {
-        it('should read settings.json', () => {
+        it('should read settings.json', async () => {
             const logStub = new StubLog(MeteorDesktop.desktop, ['info']);
-            const version = MeteorDesktop.desktop.getHashVersion();
-            expect(version).to.be.equal('da39a3ee5e6b4b0d3255bfef95601890afd80709');
+            MeteorDesktop.env.paths.desktop.root = paths.fixtures.desktop;
+            const version = await MeteorDesktop.desktop.getHashVersion();
+            expect(version).to.be.equal('c18b45f899ee04cea7f5704e98d88d9ecf0239b9');
             logStub.restore();
         });
     });

@@ -6,10 +6,14 @@ import sinon from 'sinon';
 import mockery from 'mockery';
 import rewire from 'rewire';
 
+import mockerySettings from '../../helpers/mockerySettings';
+
 chai.use(sinonChai);
 chai.use(dirty);
 
-const { describe, it, before, after } = global;
+const {
+    describe, it, before, after
+} = global;
 const { expect } = chai;
 
 const Electron = {};
@@ -19,10 +23,7 @@ let Desktop;
 describe('Desktop', () => {
     before(() => {
         mockery.registerMock('electron', Electron);
-        mockery.enable({
-            warnOnReplace: false,
-            warnOnUnregistered: false
-        });
+        mockery.enable(mockerySettings);
         Desktop = rewire('../../../skeleton/preload.js');
     });
 
@@ -59,8 +60,10 @@ describe('Desktop', () => {
     });
     describe('#fetch', () => {
         it('should send namespaced fetch ipc', (done) => {
-            const ipcMock = { on: sinon.stub(),
-                send: sinon.stub() };
+            const ipcMock = {
+                on: sinon.stub(),
+                send: sinon.stub()
+            };
             const revertIpc = Desktop.__set__('ipc', ipcMock);
             const desktop = Desktop.__get__('Desktop');
             const arg1 = { some: 'data' };
@@ -87,6 +90,20 @@ describe('Desktop', () => {
         });
     });
 
+    describe('#setDefaultFetchTimeout', () => {
+        it('should call fetch with correct timeout', () => {
+            const desktop = Desktop.__get__('Desktop');
+            const arg1 = { some: 'data' };
+            const arg2 = 'test';
+            const event = 'yyy';
+            const module = 'desktop';
+            desktop.setDefaultFetchTimeout(999);
+            desktop.fetch = sinon.stub();
+
+            desktop.call(module, event, arg1, arg2);
+            expect(desktop.fetch).to.be.calledWith(module, event, 999, arg1, arg2);
+        });
+    });
 
     function prepareOnOrOnceTest(ipcMock, callbacks, once, module, event) {
         const revertIpc = Desktop.__set__('ipc', ipcMock);
@@ -139,7 +156,8 @@ describe('Desktop', () => {
             };
 
             const test = prepareOnOrOnceTest(
-                ipcMock, [callback, callback2], true, 'desktop', 'event');
+                ipcMock, [callback, callback2], true, 'desktop', 'event'
+            );
             test.clear();
         });
         it('should call callback (with preserved this) once on events received', () => {
@@ -149,7 +167,8 @@ describe('Desktop', () => {
             const ipcMock = {
                 on(event, ipcDirectCallback) {
                     ipcCallback = ipcDirectCallback;
-                }
+                },
+                removeListener: () => {}
             };
             const onSpy = sinon.spy(ipcMock, 'on');
 
@@ -160,7 +179,8 @@ describe('Desktop', () => {
             };
             callback2 = callback2.bind(someObject);
             const test = prepareOnOrOnceTest(
-                ipcMock, [callback, callback2], true, 'desktop', 'event');
+                ipcMock, [callback, callback2], true, 'desktop', 'event'
+            );
 
             const arg1 = { some: 'data' };
             const arg2 = 'test';
@@ -175,7 +195,6 @@ describe('Desktop', () => {
 
             // Additionally we check if the ipc.on was triggered only once.
             expect(onSpy).to.be.calledOnce();
-
 
             test.clear();
         });
@@ -199,7 +218,8 @@ describe('Desktop', () => {
             };
 
             const test = prepareOnOrOnceTest(
-                ipcMock, [callback, callback2], false, 'desktop', 'event');
+                ipcMock, [callback, callback2], false, 'desktop', 'event'
+            );
             test.clear();
         });
         it('should call callback (with preserved this) on event received', () => {
@@ -220,7 +240,8 @@ describe('Desktop', () => {
             };
             callback2 = callback2.bind(someObject);
             const test = prepareOnOrOnceTest(
-                ipcMock, [callback, callback2], false, 'desktop', 'event');
+                ipcMock, [callback, callback2], false, 'desktop', 'event'
+            );
 
             const arg1 = { some: 'data' };
             const arg2 = 'test';

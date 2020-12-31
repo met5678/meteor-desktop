@@ -6,12 +6,14 @@
     "devtron": true,
     "desktopHCP": true,
     "desktopHCPIgnoreCompatibilityVersion": false,
-    "autoUpdateFeedUrl": "http://127.0.0.1/update/:platform/:version",
-    "autoUpdateFeedHeaders": {},
-    "autoUpdateCheckOnStart": true,
-    "rebuildNativeNodeModules": false,
+    "squirrel": {
+        "autoUpdateFeedUrl": "http://127.0.0.1/update/:platform/:version",
+        "autoUpdateFeedHeaders": {},
+        "autoUpdateCheckOnStart": false
+    },
     "webAppStartupTimeout": 60000,
     "exposeLocalFilesystem": false,
+    "allowOriginLocalServer": false,
     "window": {
         "icon": "@assets/meteor.png",
         "_windows": {
@@ -23,13 +25,24 @@
     "uglify": true,
     "plugins": {
         "meteor-desktop-splash-screen": {
-            "version": "0.3.0",
+            "version": "0.5.0",
             "windowSettings": {
                 "width": 800,
                 "height": 600
+            },
+            "updateScreen": true,
+            "updateScreenSettings": {
+                "imagePath": "updating.gif",
+                "windowSettings": {
+                    "width": 400,
+                    "height": 300
+                },
+                "clickThrough": false,
+                "style": {
+                    "background-size": "auto"
+                }
             }
-        },
-        "meteor-desktop-localstorage": "0.0.11"
+        }
     },
     "dependencies": {},
     "packageJsonFields": {
@@ -38,19 +51,23 @@
         "private": true
     },
     "builderOptions": {
+        "icon": ".desktop/assets/meteor.ico",
+        "appId": "meteor.app",
+        "productName": "My Meteor App",
+        "compression": "maximum",
         "win": {
-            "title": "My Meteor App",
-            "authors": "Me, Myself And I",
-            "target": "squirrel"
+            "target": "nsis"
         },
         "squirrelWindows": {
             "iconUrl": "https://github.com/wojtkowiak/meteor-desktop/blob/beta/scaffold/assets/meteor.ico?raw=true",
             "loadingGif": ".desktop/assets/loading.gif"
         },
-        "icon": ".desktop/assets/meteor.ico",
-        "appId": "meteor.app",
-        "productName": "My Meteor App",
-        "compression": "maximum",
+        "publish": [
+            {
+                "provider": "generic",
+                "url": "http://127.0.0.1:8080/"
+            }
+        ],
         "mac": {
             "icon": ".desktop/assets/meteor.icns"
         },
@@ -66,19 +83,20 @@
                 "width": 480,
                 "height": 300
             }
-        }    },
+        }
+    },
     "packagerOptions": {
         "icon": ".desktop/assets/meteor.ico",
         "_osx": {
             "icon": ".desktop/assets/meteor.icns"
         },
-        "version-string": {
+        "appVersion": "@version",
+        "buildVersion": "@version",
+        "appCopyright": "Copyright 2018 My Company - All rights reserved.",
+        "win32metadata": {
             "CompanyName": "My Company",
-            "LegalCopyright": "Copyright 2016 My Company - All rights reserved.",
             "FileDescription": "MyMeteorApp",
             "OriginalFilename": "MyMeteorApp.exe",
-            "FileVersion": "@version",
-            "ProductVersion": "@version",
             "ProductName": "MyMeteorApp",
             "InternalName": "MyMeteorApp.exe"
         }

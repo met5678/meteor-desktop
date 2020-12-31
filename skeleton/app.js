@@ -1,18 +1,18 @@
-/* eslint-disable import/no-unresolved */
+/* eslint-disable import/no-unresolved,no-console */
 /* eslint-disable global-require, import/no-dynamic-require */
 
 import electron from 'electron';
 import { EventEmitter as Events } from 'events';
 import path from 'path';
 import fs from 'fs-plus';
-
 import shell from 'shelljs';
+import semver from 'semver';
 import assignIn from 'lodash/assignIn';
 import Module from './modules/module';
 import LoggerManager from './loggerManager';
 import DesktopPathResolver from './desktopPathResolver';
 import WindowSettings from './windowSettings';
-import Squirrel from './squirrel';
+import Squirrel from './squirrel'; // DEPRECATED
 
 const { app, BrowserWindow, dialog } = electron;
 const { join } = path;
@@ -22,9 +22,20 @@ const { join } = path;
  * Here all the plugins/modules are loaded, local server is spawned and autoupdate is initialized.
  * @class
  */
-class App {
-
+export default class App {
     constructor() {
+        this.startup = true;
+        console.time('startup took');
+
+        // Fallback for Electron version lower than 5 which don't support registerSchemesAsPrivileged
+        if (semver.lt(process.versions.electron, '5.0.0-beta.0')) {
+            electron.protocol.registerStandardSchemes(['meteor'], { secure: true });
+        } else {
+            electron.protocol.registerSchemesAsPrivileged([
+                { scheme: 'meteor', privileges: { standard: true, secure: true } }
+            ]);
+        }
+
         // Until user defined handling will be loaded it is good to register something
         // temporarily.
         this.catchUncaughtExceptions();
@@ -47,20 +58,29 @@ class App {
             this.l.debug(`skeleton version ${this.settings.meteorDesktopVersion}`);
         }
 
+        this.window = null;
+
+        this.applySingleInstance();
+
         // To make desktop.asar's downloaded through HCP work, we need to provide them a path to
         // node_modules.
         const nodeModulesPath = [__dirname, 'node_modules'];
+
+        // TODO: explain this
         if (!this.isProduction()) {
             nodeModulesPath.splice(1, 0, '..');
         }
         require('module').globalPaths.push(path.resolve(join(...nodeModulesPath)));
 
+        /**
+         * DEPRECATED
+         */
         if (Squirrel.handleSquirrelEvents(this.desktopPath)) {
             app.quit();
             return;
         }
 
-        // This is need for OSX - check Electron docs for more info.
+        // This is needed for OSX - check Electron docs for more info.
         if ('builderOptions' in this.settings && this.settings.builderOptions.appId) {
             app.setAppUserModelId(this.settings.builderOptions.appId);
         }
@@ -70,14 +90,13 @@ class App {
 
         this.desktop = null;
         this.app = app;
-        this.window = null;
         this.windowAlreadyLoaded = false;
         this.webContents = null;
         this.modules = {};
         this.localServer = null;
         this.currentPort = null;
 
-        if (this.isProduction()) {
+        if (this.isProduction() && !this.settings.prodDebug) {
             // In case anything depends on this...
             process.env.NODE_ENV = 'production';
         } else {
@@ -97,10 +116,33 @@ class App {
             this.pendingDesktopVersion = desktopVersion;
         });
         this.eventsBus.on('startupDidComplete', this.handleAppStartup.bind(this, true));
-        this.eventsBus.on('revertVersionReady', () => (this.meteorAppVersionChange = true));
+        this.eventsBus.on('revertVersionReady', () => { this.meteorAppVersionChange = true; });
 
         this.app.on('ready', this.onReady.bind(this));
         this.app.on('window-all-closed', () => this.app.quit());
+    }
+
+    /**
+     * Applies single instance mode if enabled.
+     */
+    applySingleInstance() {
+        if ('singleInstance' in this.settings && this.settings.singleInstance) {
+            this.l.verbose('setting single instance mode');
+            const isSecondInstance = app.makeSingleInstance(() => {
+                // Someone tried to run a second instance, we should focus our window.
+                if (this.window) {
+                    if (this.window.isMinimized()) {
+                        this.window.restore();
+                    }
+                    this.window.focus();
+                }
+            });
+
+            if (isSecondInstance) {
+                this.l.warn('current instance was terminated because another instance is running');
+                app.quit();
+            }
+        }
     }
 
     /**
@@ -131,7 +173,8 @@ class App {
     loadSettings() {
         try {
             this.settings = JSON.parse(
-                fs.readFileSync(join(this.desktopPath, 'settings.json')), 'UTF-8');
+                fs.readFileSync(join(this.desktopPath, 'settings.json')), 'UTF-8'
+            );
         } catch (e) {
             this.l.error(e);
             dialog.showErrorBox('Application', 'Could not read settings.json. Please reinstall' +
@@ -182,7 +225,7 @@ class App {
      */
     uncaughtExceptionHandler() {
         try {
-            // this.window.close();
+            this.window.close();
         } catch (e) {
             // Empty catch block... nasty...
         }
@@ -251,7 +294,18 @@ class App {
         });
 
         // Now go through each directory in .desktop/modules.
-        fs.readdirSync(join(this.desktopPath, 'modules')).forEach((dirName) => {
+        let moduleDirectories = [];
+        try {
+            moduleDirectories = fs.readdirSync(join(this.desktopPath, 'modules'));
+        } catch (err) {
+            if (err.code === 'ENOENT') {
+                this.l.debug(`not loading custom app modules because .desktop/modules isn't a directory`);
+            } else {
+                throw err;
+            }
+        }
+
+        moduleDirectories.forEach((dirName) => {
             try {
                 const modulePath = join(this.desktopPath, 'modules', dirName);
                 if (fs.lstatSync(modulePath).isDirectory()) {
@@ -259,6 +313,8 @@ class App {
                 }
             } catch (e) {
                 this.l.error(`error while trying to load module in dir ${dirName}: ${e}`);
+                this.l.debug(e.stack);
+                this.emit('moduleLoadFailed', dirName);
             }
         });
     }
@@ -275,7 +331,7 @@ class App {
             fs.readFileSync(path.join(modulePath, 'module.json'), 'UTF-8')
         );
         if ('settings' in moduleJson) {
-            settings = moduleJson.settings;
+            ({ settings } = moduleJson);
         }
         if ('name' in moduleJson) {
             moduleName = moduleJson.name;
@@ -305,7 +361,7 @@ class App {
                 const result = App.readModuleConfiguration(modulePath);
                 assignIn(settings, result.settings);
                 if (result.moduleName) {
-                    moduleName = result.moduleName;
+                    ({ moduleName } = result);
                 }
             } catch (e) {
                 this.l.warn(`could not load ${path.join(modulePath, 'module.json')}`);
@@ -323,7 +379,10 @@ class App {
             settings = this.prepareAutoupdateSettings();
         }
         if (internal && moduleName === 'localServer') {
-            settings = { localFilesystem: this.settings.exposeLocalFilesystem };
+            settings = {
+                localFilesystem: this.settings.exposeLocalFilesystem,
+                allowOriginLocalServer: this.settings.allowOriginLocalServer || false
+            };
         }
 
         this.modules[moduleName] = new AppModule({
@@ -375,6 +434,41 @@ class App {
     }
 
     /**
+     * Checks wheteher object seems to be a promise.
+     * @param {Object} obj
+     * @returns {boolean}
+     */
+    static isPromise(obj) {
+        return !!obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function';
+    }
+
+    /**
+     * Util function for emitting events synchronously and waiting asynchronously for
+     * handlers to finish.
+     * @param {string} event - event name
+     * @param {[*]}    args  - event's arguments
+     */
+    emitAsync(event, ...args) {
+        const promises = [];
+
+        try {
+            this.eventsBus.listeners(event).forEach((handler) => {
+                const result = handler(...args);
+                if (App.isPromise(result)) {
+                    promises.push(result);
+                } else {
+                    promises.push(Promise.resolve());
+                }
+            });
+        } catch (e) {
+            this.l.error(`error while emitting '${event}' event: ${e}`);
+            return Promise.reject(e);
+        }
+        return Promise.all(promises);
+    }
+
+
+    /**
      * Initializes this app.
      * Loads plugins.
      * Loads modules.
@@ -407,6 +501,8 @@ class App {
             this.onServerRestarted.bind(this)
         );
 
+        this.emit('beforeLocalServerInit');
+
         this.localServer.init(
             this.modules.autoupdate.getCurrentAssetBundle(),
             this.desktopPath
@@ -420,9 +516,14 @@ class App {
      * @param {number} port - port on which the app is served
      */
     onServerRestarted(port) {
-        this.emit('beforeLoadUrl', port, this.currentPort);
-        this.currentPort = port;
-        this.webContents.loadURL(`http://127.0.0.1:${port}/`);
+        this.emitAsync('beforeLoadUrl', port, this.currentPort)
+            .catch(() => {
+                this.l.warning('some of beforeLoadUrl event listeners have failed');
+            })
+            .then(() => {
+                this.currentPort = port;
+                this.webContents.loadURL('meteor://desktop');
+            });
     }
 
     /**
@@ -489,8 +590,9 @@ class App {
         this.webContents = this.window.webContents;
 
         if (this.settings.devtron && !this.isProduction()) {
-            // Print some fancy status to the console if in development.
-            this.webContents.executeJavaScript(`
+            this.webContents.on('did-finish-load', () => {
+                // Print some fancy status to the console if in development.
+                this.webContents.executeJavaScript(`
                 console.log('%c   meteor-desktop   ',
                 \`background:linear-gradient(#47848F,#DE4B4B);border:1px solid #3E0E02;
                 color:#fff;display:block;text-shadow:0 3px 0 rgba(0,0,0,0.5);
@@ -498,11 +600,11 @@ class App {
                 0 -13px 5px -10px rgba(255,255,255,0.4) inset;
                 line-height:20px;text-align:center;font-weight:700;font-size:20px\`);
                 console.log(\`%cdesktop version: ${this.settings.desktopVersion}\\n` +
-                `desktop compatibility version: ${this.settings.compatibilityVersion}\\n` +
-                'meteor bundle version:' +
-                ` ${this.modules.autoupdate.currentAssetBundle.getVersion()}\\n\`` +
-                ', \'font-size: 9px;color:#222\');'
-            );
+                    `desktop compatibility version: ${this.settings.compatibilityVersion}\\n` +
+                    'meteor bundle version:' +
+                    ` ${this.modules.autoupdate.currentAssetBundle.getVersion()}\\n\`` +
+                    ', \'font-size: 9px;color:#222\');');
+            });
         }
 
         this.emit('windowCreated', this.window);
@@ -524,8 +626,34 @@ class App {
             this.handleAppStartup(false);
         });
 
-        this.emit('beforeLoadUrl', port, this.currentPort);
-        this.webContents.loadURL(`http://127.0.0.1:${port}/`);
+        const urlStripLength = 'meteor://desktop'.length;
+
+        this.webContents.session.protocol
+            .registerStreamProtocol(
+                'meteor',
+                (request, callback) => {
+                    const url = request.url.substr(urlStripLength);
+                    this.modules.localServer.getStreamProtocolResponse(url)
+                        .then(res => callback(res))
+                        .catch((e) => {
+                            callback(this.modules.localServer.getServerErrorResponse());
+                            this.log.error(`error while trying to fetch ${url}: ${e.toString()}`);
+                        });
+                },
+                (e) => {
+                    if (e) {
+                        this.l.error(`error while registering meteor:// protocol: ${e.toString()}`);
+                        this.uncaughtExceptionHandler();
+                        return;
+                    }
+                    this.l.debug('protocol meteor:// registered');
+
+                    this.l.debug('opening meteor://desktop');
+                    setTimeout(() => {
+                        this.webContents.loadURL('meteor://desktop');
+                    }, 100);
+                }
+            );
     }
 
     handleAppStartup(startupDidCompleteEvent) {
@@ -536,6 +664,10 @@ class App {
             this.l.debug('received startupDidComplete');
         }
         this.l.info('assuming meteor webapp has loaded');
+        if (this.startup) {
+            console.timeEnd('startup took');
+            this.startup = false;
+        }
         if (!this.windowAlreadyLoaded) {
             if (this.meteorAppVersionChange) {
                 this.l.verbose('there is a new version downloaded already, performing HCP' +
@@ -562,18 +694,22 @@ class App {
      */
     updateToNewVersion() {
         this.l.verbose('entering update to new HCP version procedure');
+
+        this.l.verbose(`${this.settings.desktopVersion} !== ${this.pendingDesktopVersion}`);
+
         const desktopUpdate = this.settings.desktopHCP &&
             this.settings.desktopVersion !== this.pendingDesktopVersion;
 
         this.emit(
-            'beforeReload', this.modules.autoupdate.getPendingVersion(), desktopUpdate);
+            'beforeReload', this.modules.autoupdate.getPendingVersion(), desktopUpdate
+        );
 
         if (desktopUpdate) {
             this.l.info('relaunching to use different version of desktop.asar');
             // Give winston a chance to write the logs.
             setImmediate(() => {
                 app.relaunch({ args: process.argv.slice(1).concat('--hcp') });
-                app.exit(0);
+                app.quit();
             });
         } else {
             // Firing reset routine.
@@ -591,4 +727,6 @@ class App {
     }
 }
 
-const appInstance = new App(); // eslint-disable-line no-unused-vars
+if (!process.env.METEOR_DESKTOP_UNIT_TEST) {
+    const appInstance = new App(); // eslint-disable-line no-unused-vars
+}

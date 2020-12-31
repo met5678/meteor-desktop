@@ -51,20 +51,21 @@ export function setUpLocalServer(mainPath, parentPath) {
             reject = promiseReject;
             localServer = new LocalServer({
                 log: {
-                    warn() {
-                    },
-                    info() {
-                    }
+                    warn: Function.prototype,
+                    info: Function.prototype
+                },
+                skeletonApp: {
+                    userDataDir: __dirname
                 }
             });
-            localServer.setCallbacks(() => reject(), onServerReady, () => resolve());
+            localServer.setCallbacks(() => reject(), onServerReady, onServerReady);
             localServer.init(assetBundle, '', false, false);
         });
     }
     return new Promise((promiseResolve, promiseReject) => {
         resolve = promiseResolve;
         reject = promiseReject;
-        localServer.setCallbacks(() => reject(), onServerReady, () => resolve());
+        localServer.setCallbacks(() => reject(), onServerReady, onServerReady);
         localServer.init(assetBundle, '', true, false);
     });
 }
@@ -118,7 +119,8 @@ export async function restartLocalServerAndExpectVersion(autoupdate, version) {
     autoupdate.onReset();
     try {
         await setUpLocalServer(
-            autoupdate.getDirectory(), autoupdate.getParentDirectory());
+            autoupdate.getDirectory(), autoupdate.getParentDirectory()
+        );
         await expectVersionServedToEqual(version);
     } catch (e) {
         throw new Error(e);

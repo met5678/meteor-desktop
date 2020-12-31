@@ -6,9 +6,13 @@ import sinon from 'sinon';
 import mockery from 'mockery';
 import rewire from 'rewire';
 
+import mockerySettings from '../../helpers/mockerySettings';
+
 chai.use(sinonChai);
 chai.use(dirty);
-const { describe, it, before, after } = global;
+const {
+    describe, it, before, after
+} = global;
 const { expect } = chai;
 
 const Electron = {
@@ -19,10 +23,7 @@ let Module;
 describe('Module', () => {
     before(() => {
         mockery.registerMock('electron', Electron);
-        mockery.enable({
-            warnOnReplace: false,
-            warnOnUnregistered: false
-        });
+        mockery.enable(mockerySettings);
         Module = rewire('../../../skeleton/modules/module.js');
     });
 
@@ -66,5 +67,17 @@ describe('Module', () => {
             expect(module.getResponseEventName('event')).to.equal('test__event___response');
         });
     });
-});
 
+    describe('#setDefaultFetchTimeout', () => {
+        it('should call fetch with correct timeout', () => {
+            const module = new Module('test');
+            const arg1 = { some: 'data' };
+            const arg2 = 'test';
+            const event = 'yyy';
+            module.setDefaultFetchTimeout(999);
+            module.fetch = sinon.stub();
+            module.call(event, arg1, arg2);
+            expect(module.fetch).to.be.calledWith(event, 999, arg1, arg2);
+        });
+    });
+});
